@@ -7,10 +7,10 @@ use App\Models\User;
 use App\Services\ActivityLogger;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
+use Illuminate\Validation\ValidationException;
 
 class PasswordResetController extends Controller
 {
@@ -28,25 +28,47 @@ class PasswordResetController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (! $user) {
-            return back()->withErrors(['email' => 'No account found with that email address.']);
+            throw ValidationException::withMessages([
+                'email' => 'No account found with that email address.',
+            ]);
         }
 
-        $status = Password::sendResetLink(['email' => $user->email]);
-
-        if ($status === Password::RESET_LINK_SENT) {
-            ActivityLogger::log($user->id, "Password reset link requested for {$user->username}");
-
-            return back()->with('success', 'Password reset link sent to your email.');
+        if (! $user->hasEmailForReset()) {
+            throw ValidationException::withMessages([
+                'email' => 'This account has no email on file. Contact an administrator.',
+            ]);
         }
 
-        return back()->withErrors(['email' => __($status)]);
+        if (! $user->isActive()) {
+            throw ValidationException::withMessages([
+                'email' => 'This account is deactivated. Contact an administrator.',
+            ]);
+        }
+
+        $token = Password::broker()->createToken($user);
+        $user->sendPasswordResetNotification($token);
+
+        ActivityLogger::log($user->id, "Password reset link requested for {$user->username}");
+
+        $resetUrl = url(route('password.reset', [
+            'token' => $token,
+            'email' => $user->email,
+        ], false));
+
+        $flash = ['success' => 'Password reset link sent! Check your email inbox.'];
+
+        if ($this->shouldShowDebugResetLink()) {
+            $flash['debug_reset_url'] = $resetUrl;
+        }
+
+        return back()->with($flash);
     }
 
     public function showResetForm(Request $request, string $token)
     {
         return view('auth.reset-password', [
             'token' => $token,
-            'email' => $request->email,
+            'email' => $request->query('email', $request->email),
         ]);
     }
 
@@ -62,8 +84,10 @@ class PasswordResetController extends Controller
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
                 $user->forceFill([
-                    'password' => Hash::make($password),
+                    'password' => $password,
                     'remember_token' => Str::random(60),
+                    'failed_login_attempts' => 0,
+                    'locked_until' => null,
                 ])->save();
 
                 event(new PasswordReset($user));
@@ -71,8 +95,18 @@ class PasswordResetController extends Controller
             }
         );
 
-        return $status === Password::PASSWORD_RESET
-            ? redirect()->route('login')->with('success', 'Password has been reset. You may log in.')
-            : back()->withErrors(['email' => [__($status)]]);
+        if ($status === Password::PASSWORD_RESET) {
+            return redirect()->route('login')->with('success', 'Password has been reset. You may log in with your new password.');
+        }
+
+        throw ValidationException::withMessages([
+            'email' => __(is_string($status) ? $status : 'Invalid or expired reset token.'),
+        ]);
     }
+
+    protected function shouldShowDebugResetLink(): bool
+    {
+        return config('app.debug') && in_array(config('mail.default'), ['log', 'array'], true);
+    }
+
 }

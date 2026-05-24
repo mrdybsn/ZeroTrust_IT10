@@ -106,7 +106,7 @@ zero_trust/
 
 **2FA demo:** Enable 2FA on a user in Admin → Edit User. With `APP_DEBUG=true`, the code is shown on the 2FA screen.
 
-**Password reset:** Set mail driver in `.env` (e.g. `MAIL_MAILER=log` for local testing — check `storage/logs/laravel.log`).
+**Password reset via email:** See [Password reset setup](#password-reset-via-email-bonus) below.
 
 ---
 
@@ -120,6 +120,57 @@ zero_trust/
 - [ ] Passwords hashed in DB (`users.password` starts with `$2y$`)
 - [ ] Activity logs visible at Admin → Activity Logs
 - [ ] reCAPTCHA, lockout, 2FA (bonus)
+
+---
+
+## Password reset via email (bonus)
+
+### How it works
+
+1. User opens **Forgot password?** on the login page → `/forgot-password`
+2. Enters their registered email (e.g. `admin@zerotrust.local`)
+3. System sends a **Reset Password** email with a secure link (expires in 60 minutes)
+4. User sets a new password on `/reset-password/{token}`
+5. Action is recorded in **Activity Logs** (AAA accounting)
+
+### Local testing (XAMPP, no SMTP)
+
+In `.env`:
+
+```env
+MAIL_MAILER=log
+APP_DEBUG=true
+APP_URL=http://localhost/zero_trust/public
+```
+
+1. Go to `/forgot-password`
+2. Enter `admin@zerotrust.local` or `{username}@zerotrust.local`
+3. Submit — a **reset link appears on screen** (debug mode) and the full email is in `storage/logs/laravel.log`
+
+### Real email (Gmail SMTP example)
+
+```env
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=your@gmail.com
+MAIL_PASSWORD=your-app-password
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=your@gmail.com
+MAIL_FROM_NAME="Zero Trust"
+```
+
+Use a [Gmail App Password](https://support.google.com/accounts/answer/185833) (not your normal password).
+
+### Demo account emails
+
+| Username | Email |
+|----------|-------|
+| admin | admin@zerotrust.local |
+| mardy | mardy@zerotrust.local |
+| john | john@zerotrust.local |
+
+All players use `{username}@zerotrust.local` from the database seeder.
 
 ---
 

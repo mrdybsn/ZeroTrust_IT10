@@ -1,115 +1,135 @@
-# ZERO TRUST — Secure Login & User Management Module
-### IT 10 - Information Assurance and Security 1 | Filamer Christian University
+# ZERO TRUST — Secure Login & User Management (Laravel)
+
+**IT 10 - Information Assurance and Security 1** | Filamer Christian University
+
+Laravel 12 implementation of the secure Login and User Management modules for the Zero Trust capstone project.
 
 ---
 
-## 📁 FILE STRUCTURE
+## File structure
 
 ```
 zero_trust/
-├── index.php                  ← Login page (game UI)
-├── logout.php                 ← Logout handler
-├── database.sql               ← MySQL database setup
-├── includes/
-│   ├── db.php                 ← Database connection (PDO-free MySQLi)
-│   ├── auth.php               ← Login, logout, session guards, logging
-│   ├── header.php             ← Shared game HUD (sidebar + topbar)
-│   └── footer.php             ← Shared footer + JS
-├── admin/
-│   ├── dashboard.php          ← Admin overview (stats + recent logs)
-│   ├── users.php              ← Full CRUD: add/edit/delete/view users
-│   └── logs.php               ← Activity log viewer (200 entries)
-└── player/
-    └── dashboard.php          ← Player HQ (welcome + own log)
+├── app/
+│   ├── Http/Controllers/Auth/     # Login, logout, 2FA, password reset
+│   ├── Http/Controllers/Admin/    # Dashboard, users CRUD, logs
+│   ├── Http/Controllers/Player/   # Player dashboard
+│   ├── Http/Middleware/           # EnsureAdmin (authorization)
+│   ├── Models/                    # User, ActivityLog
+│   └── Services/                  # ActivityLogger, Recaptcha, TwoFactor
+├── database/migrations/           # users, logs, sessions
+├── database/seeders/              # Default admin + players
+├── resources/views/               # Blade templates (cyberpunk UI)
+├── public/css/zero-trust.css
+├── legacy/                        # Original plain PHP version (reference)
+├── database.sql
+└── index.php                      # XAMPP entry → public/
 ```
 
 ---
 
-## ⚙️ SETUP INSTRUCTIONS (XAMPP)
+## Setup (XAMPP)
 
-1. Copy the `zero_trust/` folder to `C:/xampp/htdocs/`
-2. Open phpMyAdmin → run `database.sql` to create the DB and seed data
-3. Edit `includes/db.php` and set your MySQL username/password if needed
-4. Visit: `http://localhost/zero_trust/`
+1. Ensure **Apache** and **MySQL** are running in XAMPP.
+2. Create database (or let migrations create tables):
+   ```sql
+   CREATE DATABASE zero_trust_db;
+   ```
+3. Copy `.env.example` to `.env` if needed and set:
+   ```
+   DB_DATABASE=zero_trust_db
+   DB_USERNAME=root
+   DB_PASSWORD=
+   APP_URL=http://localhost/zero_trust/public
+   ```
+4. From project folder:
+   ```bash
+   php artisan migrate --seed
+   php artisan storage:link
+   ```
+5. Open: **http://localhost/zero_trust/public**  
+   Or: **http://localhost/zero_trust/** (uses root `index.php`)
 
 ---
 
-## 🔑 DEFAULT CREDENTIALS
+## Default credentials
 
 | Role   | Username | Password    |
 |--------|----------|-------------|
 | Admin  | admin    | Admin@1234  |
 | Player | mardy    | Player@123  |
-| Player | john     | Player@123  |
-| Player | hezelie  | Player@123  |
-| Player | franzine | Player@123  |
-| Player | gycel    | Player@123  |
-
-> **IMPORTANT:** Change all passwords after setup.
+| Player | john, hezelie, franzine, gycel | Player@123 |
 
 ---
 
-## 🛡️ SECURITY FEATURES IMPLEMENTED
+## Security features (required)
 
-### Against SQL Injection
-- All database queries use **MySQLi Prepared Statements** with `bind_param()`
-- No raw string concatenation used in any SQL query
-- Example test: entering `' OR '1'='1` in the username field will NOT bypass login
+| Requirement | Implementation |
+|-------------|----------------|
+| Hashed passwords | Laravel `bcrypt` via `password` cast on User model |
+| SQL injection prevention | Eloquent ORM + query builder (parameterized) |
+| Input validation | Form Request validation on all POST routes |
+| Session management | Laravel sessions + `regenerate()` on login |
+| Role authorization | `EnsureAdmin` middleware |
+| Activity logging | `ActivityLogger` → `logs` table with IP |
+| Invalid login handling | Generic error message, failed attempt logged |
 
-### Password Security
-- Passwords hashed with **bcrypt (PASSWORD_BCRYPT)** at cost factor 12
-- `password_hash()` and `password_verify()` used — no plain-text passwords stored
-- Minimum 8-character password enforced on registration
-
-### Session Security
-- `session_regenerate_id(true)` called on successful login (prevents session fixation)
-- Role-based guards: `requireLogin()` and `requireAdmin()` functions
-- Sessions destroyed completely on logout
-
-### CSRF Protection
-- CSRF token generated with `bin2hex(random_bytes(32))` on each form
-- Token validated server-side before processing any POST request
-
-### Input Validation
-- All output escaped with `htmlspecialchars()` via `e()` helper (prevents XSS)
-- Role and status fields validated against whitelists
-- Username/password length limits enforced
-
-### CIA Triad Application
-- **Confidentiality**: Passwords hashed, no sensitive data exposed in responses
-- **Integrity**: Input validation, prepared statements, CSRF protection
-- **Availability**: Invalid input handled gracefully; system stays operational
-
-### AAA Framework
-- **Authentication**: bcrypt password verification on every login
-- **Authorization**: Role-based access control (Admin vs Player)
-- **Accounting**: All login/logout/CRUD actions recorded in `logs` table with timestamp + IP
+**SQL injection test:** Enter `' OR '1'='1` as username — login will **not** bypass.
 
 ---
 
-## 🎯 DEMONSTRATION CHECKLIST (for IT 10 Demo)
+## CIA & AAA
 
-- [x] Valid login → redirects to correct dashboard by role
-- [x] Invalid login → error message, no bypass
-- [x] SQL Injection test (`' OR '1'='1`) → rejected
-- [x] Admin access → User Management CRUD + Logs
-- [x] Player access → restricted to own dashboard only
-- [x] Password hashing → check DB, passwords show as bcrypt hash
-- [x] Activity logs → every action is recorded
-
----
-
-## 📊 GRADING CRITERIA COMPLIANCE
-
-| Criteria                | Implementation                                      |
-|------------------------|-----------------------------------------------------|
-| Functionality (25%)    | Login, logout, session, CRUD, role redirect         |
-| Security (35%)         | Prepared stmts, bcrypt, CSRF, session regen, XSS    |
-| UI/UX (10%)            | Cyberpunk/game-themed HUD interface                 |
-| Database Design (10%)  | Normalized users + logs tables, FK constraint       |
-| Documentation (10%)    | This README + inline code comments                  |
-| Demonstration (10%)    | All demo items checkable above                      |
+- **Confidentiality:** Passwords hashed; secrets hidden from JSON
+- **Integrity:** Validation rules; CSRF on all forms
+- **Availability:** Graceful errors; rate limiting does not crash app
+- **Authentication:** Username + password + Google reCAPTCHA v2
+- **Authorization:** Admin-only routes for user CRUD and logs
+- **Accounting:** Login, logout, CRUD, and failed attempts logged
 
 ---
 
-*Zero Trust Capstone Group — Filamer Christian University, Inc. | 2026*
+## Bonus features
+
+| Feature | Status |
+|---------|--------|
+| Google reCAPTCHA v2 | Login form (“I’m not a robot”) |
+| Login attempt limiting | RateLimiter (5 per IP+username) |
+| Account lockout | 5 failed attempts → 15 min lock |
+| Password strength meter | Login + add user forms |
+| Admin activity dashboard | Stat cards + 7-day charts |
+| Two-factor authentication | Optional per user (6-digit code) |
+| Password reset via email | `/forgot-password` (configure `MAIL_*` in `.env`) |
+| HTTPS | Use XAMPP SSL or deploy behind HTTPS in production |
+
+**reCAPTCHA:** Keys are in `.env` (`RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY`). For demos on localhost, the included Google **test keys** work out of the box. For production, register your domain at [Google reCAPTCHA Admin](https://www.google.com/recaptcha/admin) and replace the keys.
+
+**2FA demo:** Enable 2FA on a user in Admin → Edit User. With `APP_DEBUG=true`, the code is shown on the 2FA screen.
+
+**Password reset:** Set mail driver in `.env` (e.g. `MAIL_MAILER=log` for local testing — check `storage/logs/laravel.log`).
+
+---
+
+## Demonstration checklist
+
+- [ ] Valid login (admin → admin dashboard, player → player HQ)
+- [ ] Invalid login (wrong password)
+- [ ] SQL injection test `' OR '1'='1`
+- [ ] Admin: add / edit / delete / view users
+- [ ] Player: cannot access `/admin/*`
+- [ ] Passwords hashed in DB (`users.password` starts with `$2y$`)
+- [ ] Activity logs visible at Admin → Activity Logs
+- [ ] reCAPTCHA, lockout, 2FA (bonus)
+
+---
+
+## Submission
+
+1. Source code (this repository)
+2. `database.sql` + migrations
+3. Screenshots documentation (add your own `docs/` folder)
+4. Live demo using checklist above
+
+---
+
+*Zero Trust Capstone Group — Filamer Christian University | 2026*
